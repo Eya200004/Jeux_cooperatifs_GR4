@@ -2,7 +2,7 @@
 
 Shapley exact et Monte-Carlo, cœur par programmation linéaire, indice de Shapley-Shubik.
 
-Projet de Théorie des jeux et systèmes multi-agents, Cycle Ingénieur Informatique Décisionnelle et IA.
+Projet de Théorie des jeux et systèmes multi-agents, Cycle Ingénieur en Ingénierie des données et Intelligence Artificielle.
 
 ## Membres et rôles (semaines 1 à 4)
 
@@ -40,10 +40,3 @@ La rotation des rôles a lieu à la fin de la semaine 4 (voir le Gantt dans `doc
 - `agent_tj_sma.py` : agent du cours étendu (outils `coeur`, `shapley_vote`)
 - `tests/` : tests pytest
 
-## Convention de commit
-
-`[Prénom] verbe + objet`, par exemple : `[Aya] Ajout du squelette du dépôt`
-
-## Travail en équipe
-
-Chacun travaille sur sa branche (`prenom/sujet`) et fusionne via pull request. Chaque membre doit avoir des commits visibles.
