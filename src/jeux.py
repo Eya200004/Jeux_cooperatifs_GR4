@@ -26,16 +26,24 @@ Conventions communes
 Les pseudo-codes numérotés (Algorithmes 1 à 4) et les fondements théoriques sont
 détaillés dans ``docs/fiche_lecture.md``.
 
-Remarque : les corps des fonctions ne sont pas encore implémentés ; chaque
-fonction lève ``NotImplementedError``.
+Les fonctions suivent les interfaces et conventions décrites ci-dessous.
 """
 
 from __future__ import annotations
 
+import random
+from math import factorial, sqrt
 from typing import Callable
+
+from scipy.optimize import linprog
 
 # Alias de type : fonction caractéristique d'un jeu coopératif.
 FonctionCaracteristique = Callable[[int], float]
+
+
+def _valider_n(n: int) -> None:
+    if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+        raise ValueError("n doit être un entier supérieur ou égal à 1")
 
 
 def shapley_exact(v: FonctionCaracteristique, n: int) -> list[float]:
@@ -80,7 +88,23 @@ def shapley_exact(v: FonctionCaracteristique, n: int) -> list[float]:
     1, 2, 3 de la fiche) : ``v({0,1}) = v({0,2}) = 60``, ``v({1,2}) = 0``,
     ``v(N) = 90``, singletons nuls. Résultat attendu : ``[50, 20, 20]``.
     """
-    raise NotImplementedError
+    _valider_n(n)
+    valeurs = [float(v(mask)) for mask in range(1 << n)]
+    fact = [factorial(k) for k in range(n + 1)]
+    denominateur = fact[n]
+    phi = [0.0] * n
+
+    for coalition in range(1 << n):
+        taille = coalition.bit_count()
+        poids = fact[taille] * fact[n - taille - 1] / denominateur
+        for joueur in range(n):
+            bit = 1 << joueur
+            if not coalition & bit:
+                phi[joueur] += poids * (
+                    valeurs[coalition | bit] - valeurs[coalition]
+                )
+
+    return phi
 
 
 def shapley_mc(
@@ -131,7 +155,37 @@ def shapley_mc(
     ----------
     Voir « Algorithme 2 » dans ``docs/fiche_lecture.md``.
     """
-    raise NotImplementedError
+    _valider_n(n)
+    if not isinstance(K, int) or isinstance(K, bool) or K < 2:
+        raise ValueError("K doit être un entier supérieur ou égal à 2")
+
+    rng = random.Random(seed)
+    moyennes = [0.0] * n
+    sommes_carres = [0.0] * n
+    comptes = [0] * n
+    valeur_precedente_vide = float(v(0))
+
+    for _ in range(K):
+        coalition = 0
+        valeur_precedente = valeur_precedente_vide
+
+        for joueur in rng.sample(range(n), n):
+            coalition |= 1 << joueur
+            valeur_courante = float(v(coalition))
+            marginale = valeur_courante - valeur_precedente
+            comptes[joueur] += 1
+            delta = marginale - moyennes[joueur]
+            moyennes[joueur] += delta / comptes[joueur]
+            sommes_carres[joueur] += delta * (
+                marginale - moyennes[joueur]
+            )
+            valeur_precedente = valeur_courante
+
+    erreurs = [
+        sqrt(max(sommes_carres[i] / (K - 1), 0.0) / K)
+        for i in range(n)
+    ]
+    return moyennes, erreurs
 
 
 def coeur_lp(
@@ -182,7 +236,59 @@ def coeur_lp(
     ----------
     Voir « Algorithme 3 » dans ``docs/fiche_lecture.md``.
     """
-    raise NotImplementedError
+    _valider_n(n)
+    grande_coalition = (1 << n) - 1
+    valeur_grande_coalition = float(v(grande_coalition))
+    a_ub = []
+    b_ub = []
+
+    for coalition in range(1, grande_coalition):
+        a_ub.append([
+            -1.0 if coalition & (1 << joueur) else 0.0
+            for joueur in range(n)
+        ])
+        b_ub.append(-float(v(coalition)))
+
+    contraintes = {
+        "A_ub": a_ub or None,
+        "b_ub": b_ub or None,
+        "A_eq": [[1.0] * n],
+        "b_eq": [valeur_grande_coalition],
+        "bounds": [(None, None)] * n,
+        "method": "highs",
+    }
+
+    faisabilite = linprog([0.0] * n, **contraintes)
+    if faisabilite.status == 2:
+        return None
+    if not faisabilite.success:
+        raise RuntimeError(
+            f"Échec du programme linéaire de faisabilité : {faisabilite.message}"
+        )
+
+    bornes = []
+    for joueur in range(n):
+        objectif_min = [0.0] * n
+        objectif_min[joueur] = 1.0
+        resultat_min = linprog(objectif_min, **contraintes)
+        if not resultat_min.success:
+            raise RuntimeError(
+                f"Échec du calcul du minimum du joueur {joueur} : "
+                f"{resultat_min.message}"
+            )
+
+        objectif_max = [0.0] * n
+        objectif_max[joueur] = -1.0
+        resultat_max = linprog(objectif_max, **contraintes)
+        if not resultat_max.success:
+            raise RuntimeError(
+                f"Échec du calcul du maximum du joueur {joueur} : "
+                f"{resultat_max.message}"
+            )
+
+        bornes.append((float(resultat_min.fun), float(-resultat_max.fun)))
+
+    return bornes
 
 
 def shapley_shubik(v: FonctionCaracteristique, n: int) -> list[float]:
@@ -227,4 +333,31 @@ def shapley_shubik(v: FonctionCaracteristique, n: int) -> list[float]:
     Exemple de référence : ``[51 ; 40, 30, 20, 10]`` donne
     ``[5/12, 1/4, 1/4, 1/12]``.
     """
-    raise NotImplementedError
+    _valider_n(n)
+    valeurs = [float(v(mask)) for mask in range(1 << n)]
+    if valeurs[0] != 0.0 or valeurs[-1] != 1.0:
+        raise ValueError("Un jeu simple doit vérifier v(0) = 0 et v(N) = 1")
+    if any(valeur not in (0.0, 1.0) for valeur in valeurs):
+        raise ValueError("Un jeu simple ne peut prendre que les valeurs 0 et 1")
+
+    for coalition, valeur in enumerate(valeurs):
+        for joueur in range(n):
+            bit = 1 << joueur
+            if not coalition & bit and valeur > valeurs[coalition | bit]:
+                raise ValueError("La fonction caractéristique doit être monotone")
+
+    fact = [factorial(k) for k in range(n + 1)]
+    denominateur = fact[n]
+    indices = [0.0] * n
+
+    for coalition, valeur in enumerate(valeurs):
+        if valeur != 0.0:
+            continue
+        taille = coalition.bit_count()
+        poids = fact[taille] * fact[n - taille - 1] / denominateur
+        for joueur in range(n):
+            bit = 1 << joueur
+            if not coalition & bit and valeurs[coalition | bit] == 1.0:
+                indices[joueur] += poids
+
+    return indices
